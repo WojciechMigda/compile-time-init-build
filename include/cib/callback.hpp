@@ -4,6 +4,7 @@
 
 #include <array>
 #include <type_traits>
+#include <utility>
 
 
 #ifndef COMPILE_TIME_INIT_BUILD_CALLBACK_HPP
@@ -20,12 +21,17 @@ namespace cib {
      * @tparam NumFuncs
      *      The number of functions currently registered with this builder.
      *
+     * @tparam Unique
+     *      Boolean flag to indicate unique service, which can be extended with
+     *      only one feature, but that feature will have arguments forwarded
+     *      to the callback.
+     *
      * @tparam ArgTypes
      *      List of argument types that must be passed into the callback when it is invoked.
      *
      * @see cib::callback_meta
      */
-    template<int NumFuncs = 0, typename... ArgTypes>
+    template<int NumFuncs = 0, bool Unique = false, typename... ArgTypes>
     struct callback {
     private:
         using func_ptr_t = void(*)(ArgTypes...);
@@ -57,10 +63,18 @@ namespace cib {
             CIB_CONSTEXPR auto handler_builder = BuilderValue::value;
             CIB_CONSTEXPR auto num_funcs = std::integral_constant<int, NumFuncs>{};
 
-            detail::for_each(num_funcs, [&](auto i){
-                CIB_CONSTEXPR auto func = handler_builder.funcs[i];
-                func(args...);
-            });
+            if CIB_CONSTEVAL (Unique == true)
+            {
+                CIB_CONSTEXPR auto func = handler_builder.funcs[0];
+                func(std::forward<ArgTypes>(args)...);
+            }
+            else
+            {
+                detail::for_each(num_funcs, [&](auto i){
+                    CIB_CONSTEXPR auto func = handler_builder.funcs[i];
+                    func(args...);
+                });
+            }
         }
 
     public:
@@ -73,6 +87,10 @@ namespace cib {
         )
             : funcs{}
         {
+            static_assert(
+                (prev_funcs.size() == 0) or (Unique == false),
+                "Unique service cannot be extended to more than 1 feature.");
+
             for (unsigned int i = 0; i < prev_funcs.size(); i++) {
                 funcs[i] = prev_funcs[i];
             }
@@ -94,7 +112,7 @@ namespace cib {
          * @see cib::nexus
          */
         [[nodiscard]] CIB_CONSTEVAL auto add(func_ptr_t const & func) const {
-            return callback<NumFuncs + 1, ArgTypes...>{funcs, func};
+            return callback<NumFuncs + 1, Unique, ArgTypes...>{funcs, func};
         }
 
         /**
@@ -134,7 +152,29 @@ namespace cib {
     template<typename... ArgTypes>
     struct callback_meta :
         public cib::builder_meta<
-            callback<0, ArgTypes...>,
+            callback<0, false, ArgTypes...>,
+            void(*)(ArgTypes...)>
+    {};
+
+    /**
+     * Extend this to create named callback services that are unique to single
+     * callback.
+     *
+     * Types that extend callback_meta_unique can be used as unique names with
+     * cib::exports and cib::extend.
+     *
+     * @tparam ArgTypes
+     *      The function arguments that must be passed into the callback
+     *      services implementation. Any function registered with this
+     *      callback service must also have a compatible signature.
+     *
+     * @see cib::exports
+     * @see cib::extend
+     */
+    template<typename... ArgTypes>
+    struct callback_meta_unique :
+        public cib::builder_meta<
+            callback<0, true, ArgTypes...>,
             void(*)(ArgTypes...)>
     {};
 }
