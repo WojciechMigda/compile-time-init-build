@@ -88,7 +88,7 @@ namespace cib {
             : funcs{}
         {
             static_assert(
-                (prev_funcs.size() == 0) or (Unique == false),
+                (NumFuncs == 1) or (Unique == false),
                 "Unique service cannot be extended to more than 1 feature.");
 
             for (unsigned int i = 0; i < prev_funcs.size(); i++) {
